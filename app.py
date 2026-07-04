@@ -1,5 +1,5 @@
-from flask import Flask, render_template, request, redirect, url_for, flash
-from werkzeug.security import generate_password_hash
+from flask import Flask, render_template, request, redirect, url_for, flash, session
+from werkzeug.security import generate_password_hash, check_password_hash
 
 from database.db import get_db, init_db, seed_db
 
@@ -22,6 +22,9 @@ def landing():
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
+    if "user_id" in session:
+        return redirect(url_for("landing"))
+
     if request.method == "POST":
         name = request.form.get("name", "").strip()
         email = request.form.get("email", "").strip()
@@ -64,8 +67,36 @@ def register():
     return render_template("register.html")
 
 
-@app.route("/login")
+@app.route("/login", methods=["GET", "POST"])
 def login():
+    if "user_id" in session:
+        return redirect(url_for("landing"))
+
+    if request.method == "POST":
+        email = request.form.get("email", "").strip()
+        password = request.form.get("password", "")
+
+        error = None
+        if not email or not password:
+            error = "Invalid email or password."
+        else:
+            conn = get_db()
+            user = conn.execute(
+                "SELECT id, name, email, password_hash FROM users WHERE email = ?",
+                (email,),
+            ).fetchone()
+            conn.close()
+
+            if user is None or not check_password_hash(user["password_hash"], password):
+                error = "Invalid email or password."
+            else:
+                session["user_id"] = user["id"]
+                session["user_name"] = user["name"]
+                flash("Welcome back, " + user["name"] + "!", "success")
+                return redirect(url_for("landing"))
+
+        return render_template("login.html", error=error, email=email)
+
     return render_template("login.html")
 
 
@@ -85,6 +116,7 @@ def privacy():
 
 @app.route("/logout")
 def logout():
+    session.clear()
     flash("You have been logged out.", "info")
     return redirect(url_for("landing"))
 
